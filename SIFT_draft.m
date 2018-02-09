@@ -59,4 +59,9 @@ for i = 1:octave %each octave(same size of image) has different blurred image wi
 			imshow(int_temp_D);
 		end
 	end
+	
+    D{i} = temp_D;
+    temp_img = temp_img(1:2:end, 1:2:end);
+    temp_img = padarray(temp_img, [1, 1], 'both', 'replicate');
+	
 end
