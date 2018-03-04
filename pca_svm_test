@@ -1,0 +1,100 @@
+import cv2
+import numpy as np
+import sys
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+from sklearn.decomposition import PCA
+from sklearn.model_selection import GridSearchCV
+from sklearn.svm import SVC
+from matplotlib import pyplot as plt
+
+def read_data(fin):
+    # read image files, return image data, image number, name
+    # fin file : includes path of image data
+
+    target_li = []
+    data_li = []
+
+    for line in open(fin):
+        working_dir = fin.split('/')[:-1]
+        image_path, box_id = line.strip().split(';')
+        target_name = image_path.split('/')[1]
+        image_data = cv2.imread(image_path, cv2.COLOR_BGR2GRAY)
+
+        data_li.append(image_data) #image data
+        target_li.append(int(box_id)) #box image id
+
+    return(np.array(data_li), np.array(target_li))
+
+
+def create_train_test_data(image_data, label_li):
+    # number of image data, image pixel row size, image pixel column size
+    n_samples, image_h, image_w = image_data.shape
+
+    # column pixel intensity vector + row pixel intensity vector => make one vector
+    # length : image_h x image_w -> feature vector
+    X = image_data.reshape(n_samples, -1)
+
+    n_features = X.shape[1] #feature size
+    y = label_li #learning label
+    n_classes = len(set(y)) #number of class
+
+    print("Total dataset size:")
+    print("n_samples: %d" %n_samples)
+    print("n_features: %d" %n_features)
+    print("n_classes: %d" %n_classes)
+
+    #scikitlearn function : by train_test_split, divide training set evaluation set
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.25, random_state = 42)
+    return (X_train, X_test, y_train, y_test)
+
+def extract_features(X_train, X_test, n_components, image_h, image_w):
+    print("Extracting the top %d eigenboxes from %d faces" % (n_components, X_train.shape[0]))
+
+    pca = PCA(n_components = n_components, svd_solver= 'randomized', whiten= True).fit(X_train)
+
+    eigenboxes = pca.components_.reshape((n_components, image_h, image_w))
+    #principle components change to original image in terms of dimension
+    X_train_pca = pca.transform(X_train)
+    X_test_pca = pca.transform(X_test)
+
+    return(X_train_pca, X_test_pca, eigenboxes)
+
+def train_test_classifier(X_train_pca, X_test_pca, y_train, y_test):
+    print("Fitting the classifier to the training set")
+    param_grid = {'C': [1e3, 5e3, 1e4, 5e4, 1e5], 'gamma': [0.0001, 0.0005, 0.001, 0.005 , 0.01, 0.1], }
+    clf = GridSearchCV(SVC(kernel= 'rbf', class_weight= 'balanced'), param_grid)
+    clf = clf.fit(X_train_pca, y_train)
+    print("Best estimator found by grid search:")
+    print(clf.best_estimator_)
+
+    print("Predicting people's names on the test set")
+    y_pred = clf.predict(X_test_pca)
+    print(classification_report(y_test, y_pred))
+
+def plot_gallery(images, n_col = 5):
+    # print five images in a row
+    n_row = round(images.shape[0] / n_col)
+    plt.figure(figsize=(1.8 * n_col, 2.4 * n_row))
+    plt.subplots_adjust(bottom = 0.1, left = 0.01, right = 0.99, top = 0.90, hspace = 0.35)
+
+    for i in range(n_row * n_col):
+        plt.subplot(n_row, n_col, i+1)
+        #cmap -> gray, plot gray image
+        #imshow -> maximum: white, minimum: black
+        plt.imshow(images[i], cmap = 'gray')
+        plt.xticks(())
+        plt.yticks(())
+
+
+if __name__ == '__main__':
+    argv = sys.argv
+    image_data, label = read_data('faces.csv')
+    n_eigenbox = 10 #extracting the number of eigenboxes
+    X_train, X_test, y_train, y_test = create_train_test_data(image_data, label)
+    X_train_pca, X_test_pca, eigenboxes = extract_features(X_train, X_test, n_eigenbox, image_h = 112, image_w = 92)
+    train_test_classifier(X_train_pca, X_test_pca, y_train, y_test)
+    plot_gallery(eigenboxes)
+    plt.show()
+
+
